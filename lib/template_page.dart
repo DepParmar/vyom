@@ -3,29 +3,27 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'template_editor.dart';
 
-/// Cache for images so they don’t reload unnecessarily
 final Map<String, ImageProvider> _imageCache = {};
 
-/// Template model
 class TemplateData {
+  final String id;
   final String name;
-  final String school;
   final int standard;
   final int maxMarks;
   final String? imagePath;
 
   TemplateData({
+    required this.id,
     required this.name,
-    required this.school,
     required this.standard,
     required this.maxMarks,
     this.imagePath,
   });
 
-  factory TemplateData.fromJson(Map<String, dynamic> json, String schoolName) {
+  factory TemplateData.fromJson(Map<String, dynamic> json) {
     return TemplateData(
+      id: json['id'],
       name: json['name'] ?? 'Untitled',
-      school: schoolName,
       standard: json['standard'] ?? 0,
       maxMarks: json['max_marks'] ?? 0,
       imagePath: json['image_url'],
@@ -43,134 +41,230 @@ class SupabaseTemplatesPage extends StatefulWidget {
 class _SupabaseTemplatesPageState extends State<SupabaseTemplatesPage> {
   late final SupabaseClient _supabase;
 
-  final List<TemplateData> _loadedTemplates = [];
-  final ScrollController _scrollController = ScrollController();
+  List<Map<String, dynamic>> _schools = [];
+  String? _selectedSchoolId;
 
-  bool _isLoading = false;
-  bool _hasMore = true;
-  int _page = 0;
-  final int _limit = 20; // load 20 at a time
+  List<int> _marksOptions = [];
+  int? _selectedMarks;
+
+  List<TemplateData> _templates = [];
+
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _supabase = Supabase.instance.client;
-    _fetchTemplates();
-
-    // Add scroll listener for infinite scroll
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-              _scrollController.position.maxScrollExtent - 200 &&
-          !_isLoading &&
-          _hasMore) {
-        _fetchTemplates();
-      }
-    });
+    _initData();
   }
 
-  Future<void> _fetchTemplates() async {
-    if (_isLoading) return;
+  Future<void> _initData() async {
+    try {
+      // Fetch schools
+      final response = await _supabase.from('schools').select('id, name');
+      final schools = List<Map<String, dynamic>>.from(response);
 
-    setState(() => _isLoading = true);
+      if (schools.isNotEmpty) {
+        _selectedSchoolId = schools.first['id'];
+        _schools = schools;
 
-    final from = _page * _limit;
-    final to = from + _limit - 1;
+        // Fetch marks for first school
+        await _fetchMarks(_selectedSchoolId!, autoSelectFirst: true);
+      }
+    } catch (e) {
+      debugPrint("❌ Error init data: $e");
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
 
+  Future<void> _fetchMarks(String schoolId,
+      {bool autoSelectFirst = false}) async {
+    try {
+      final response = await _supabase
+          .from('templates')
+          .select('max_marks')
+          .eq('school_id', schoolId);
+
+      final marks = (response as List)
+          .map((row) => row['max_marks'] as int)
+          .toSet()
+          .toList()
+        ..sort();
+
+      if (marks.isNotEmpty) {
+        _marksOptions = marks;
+        if (autoSelectFirst) {
+          _selectedMarks = marks.first;
+          await _fetchTemplates(schoolId, _selectedMarks!);
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ Error fetching marks: $e");
+    }
+  }
+
+  Future<void> _fetchTemplates(String schoolId, int marks) async {
     try {
       final response = await _supabase
           .from('templates')
           .select()
-          .range(from, to);
+          .eq('school_id', schoolId)
+          .eq('max_marks', marks);
 
-      final fetched = (response as List)
-          .map((json) => TemplateData.fromJson(json, "My School"))
+      final templates = (response as List)
+          .map((json) => TemplateData.fromJson(json))
           .toList();
 
       setState(() {
-        _page++;
-        _loadedTemplates.addAll(fetched);
-        if (fetched.length < _limit) {
-          _hasMore = false; // no more data
-        }
+        _templates = templates;
       });
     } catch (e) {
       debugPrint("❌ Error fetching templates: $e");
-    } finally {
-      setState(() => _isLoading = false);
     }
   }
 
-  void _onTemplateTap(TemplateData template) {
-    final imagePath = template.imagePath ?? '';
-    ImageProvider? cachedImage = _imageCache[imagePath];
+Future<List<String>> _fetchSubjects(String schoolId, int standard) async {
+  try {
+    final response = await _supabase
+        .from('subjects')
+        .select('subject, standard_range')
+        .eq('school_id', schoolId);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TemplateEditor(
-          backgroundImage: imagePath,
-          templateName: template.name,
-          subjects: const ["Math", "Science", "English"], // TODO: dynamic
-          preloadedBackgroundImage: cachedImage,
-          maxMarks: template.maxMarks,
-        ),
+    final subjects = <String>[];
+
+    for (var row in response) {
+      final range = row['standard_range'] as String?;
+      final subject = row['subject'] as String;
+
+      if (range != null) {
+        // Example standard_range: "1-5"
+        final parts = range.split('-');
+        if (parts.length == 2) {
+          final start = int.tryParse(parts[0]) ?? 0;
+          final end = int.tryParse(parts[1]) ?? 0;
+          if (standard >= start && standard <= end) {
+            subjects.add(subject);
+          }
+        }
+      }
+    }
+
+    return subjects;
+  } catch (e) {
+    debugPrint("❌ Error fetching subjects: $e");
+    return [];
+  }
+}
+
+  void _onTemplateTap(TemplateData template) async {
+  final imagePath = template.imagePath ?? '';
+  final cachedImage = _imageCache[imagePath];
+
+  // Fetch subjects before opening editor
+  final subjects =
+      await _fetchSubjects(_selectedSchoolId!, template.standard);
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => TemplateEditor(
+        backgroundImage: imagePath,
+        templateName: template.name,
+        subjects: subjects, // ✅ dynamic subjects now
+        preloadedBackgroundImage: cachedImage,
+        maxMarks: template.maxMarks,
       ),
-    );
-  }
+    ),
+  );
+}
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "Templates",
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-        ),
-        backgroundColor: const Color(0xFFE3F2FD),
-        elevation: 1,
-      ),
-      body: _loadedTemplates.isEmpty && _isLoading
-          ? _buildLoadingPlaceholders()
-          : ListView.builder(
-              controller: _scrollController,
-              itemCount: _loadedTemplates.length + (_hasMore ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == _loadedTemplates.length) {
-                  // Loader at bottom when fetching more
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-                final template = _loadedTemplates[index];
-                return _TemplateCard(
-                  template: template,
-                  onTap: () => _onTemplateTap(template),
-                );
-              },
-            ),
-    );
-  }
+    return Column(
+      children: [
+        // Top row with school + marks side by side
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // School dropdown
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                    value: _selectedSchoolId,
+                    items: _schools
+                        .map((school) => DropdownMenuItem<String>(
+                              value: school['id'] as String,
+                              child: Text(
+                                school['name'] as String,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                  decoration: const InputDecoration(
+                    labelText: "School",
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setState(() {
+                        _selectedSchoolId = value;
+                        _marksOptions.clear();
+                        _templates.clear();
+                      });
+                      await _fetchMarks(value, autoSelectFirst: true);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
 
-  Widget _buildLoadingPlaceholders() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 6,
-      itemBuilder: (context, index) => Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        height: 220,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade300,
-          borderRadius: BorderRadius.circular(20),
+              // Marks dropdown
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _selectedMarks,
+                  items: _marksOptions
+                      .map((m) =>
+                          DropdownMenuItem(value: m, child: Text("$m Marks")))
+                      .toList(),
+                  decoration: const InputDecoration(
+                    labelText: "Marks",
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (marks) async {
+                    if (marks != null && _selectedSchoolId != null) {
+                      setState(() => _selectedMarks = marks);
+                      await _fetchTemplates(_selectedSchoolId!, marks);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+
+        // Templates list
+        Expanded(
+          child: _templates.isEmpty
+              ? const Center(child: Text("No templates found"))
+              : ListView.builder(
+                  itemCount: _templates.length,
+                  itemBuilder: (context, index) {
+                    final template = _templates[index];
+                    return _TemplateCard(
+                      template: template,
+                      onTap: () => _onTemplateTap(template),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
@@ -254,7 +348,7 @@ class _TemplateCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "${template.school} • ${template.maxMarks} Marks",
+                    "${template.standard} Std • ${template.maxMarks} Marks",
                     style: TextStyle(
                         fontSize: 14, color: Colors.grey.shade700),
                   ),
