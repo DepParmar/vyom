@@ -66,7 +66,9 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
           child: Transform.translate(
             offset: const Offset(0, -50), 
             child: Column(
@@ -83,7 +85,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 32),
 
                 Text(
-                  'Welcome Back',
+                  'Welcome',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -92,7 +94,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 8),
                 
                 Text(
-                  'Sign in to your Vyom',
+                  'Sign in to Vyom Tutions',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey[600],
                   ),
@@ -174,6 +176,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+    )
     );
   }
 }

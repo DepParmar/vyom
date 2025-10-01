@@ -121,7 +121,7 @@ class _TemplateEditorState extends State<TemplateEditor> {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes = byteData!.buffer.asUint8List();
 
-      await Gal.putImageBytes(pngBytes, album: "VyomTemplates");
+      await Gal.putImageBytes(pngBytes, album: "VyomTtutions");
       _showSnackBar("Poster saved to Gallery!");
     } catch (e) {
       _showSnackBar("Error saving poster: $e", isError: true);
