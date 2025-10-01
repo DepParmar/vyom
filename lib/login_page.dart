@@ -66,21 +66,22 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-            key: _formKey,
+          padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
+          child: Transform.translate(
+            offset: const Offset(0, -50), 
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Logo or App Name
-                Icon(
-                  Icons.lock_outline,
-                  size: 80,
-                  color: Theme.of(context).primaryColor,
+               Image.asset(
+                  'assets/images/vyom.png', 
+                  width: 150,       
+                  height: 150,
+                  fit: BoxFit.contain,
                 ),
                 const SizedBox(height: 32),
-                
+
                 Text(
                   'Welcome Back',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -91,7 +92,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 8),
                 
                 Text(
-                  'Sign in to your account',
+                  'Sign in to your Vyom',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey[600],
                   ),
