@@ -42,3 +42,6 @@ flutter_icons:
   android: true
   ios: true
   image_path: assets/images/vyom.png
+  android_adaptive_icon_background: "#ffffff" 
+  android_adaptive_icon_foreground: assets/images/vyom.png
+  remove_alpha_ios: false  
